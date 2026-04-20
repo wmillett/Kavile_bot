@@ -138,6 +138,7 @@ Sende diese Befehle an deinen Bot:
 - `SEARCH_LOCATION`: Standard-Suchort (Standard: "Berlin")
 - `SEARCH_PRICE_MAX`: Maximaler Preis (0 = kostenlos, Standard: "0")
 - `CATEGORY_ID`: Kategorie-ID (115 = Fahrräder, 0 = alle Kategorien, Standard: "115")
+- `SEARCH_URL`: Optionaler kompletter Kleinanzeigen-Suchlink (überschreibt die dynamische Suche)
 - `SEARCH_INTERVAL`: Suchintervall in Sekunden (Standard: "300")
 
 ## Dateistruktur 📁

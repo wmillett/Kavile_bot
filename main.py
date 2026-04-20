@@ -15,6 +15,7 @@ SEARCH_LOCATION = os.getenv("SEARCH_LOCATION", "Berlin")
 SEARCH_PRICE_MAX = int(os.getenv("SEARCH_PRICE_MAX", "0"))
 CATEGORY_ID = int(os.getenv("CATEGORY_ID", "115"))  # 115 = Fahrräder
 SEARCH_INTERVAL = int(os.getenv("SEARCH_INTERVAL", "300"))
+SEARCH_URL = os.getenv("SEARCH_URL", "")
 
 # Config file to store user settings
 CONFIG_FILE = "bot_config.json"
@@ -24,13 +25,22 @@ def load_config():
     """Load bot configuration from file."""
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
+            config = json.load(f)
+        return {
+            "search_item": config.get("search_item", SEARCH_ITEM),
+            "search_location": config.get("search_location", SEARCH_LOCATION),
+            "max_price": config.get("max_price", SEARCH_PRICE_MAX),
+            "category_id": config.get("category_id", CATEGORY_ID),
+            "search_interval": config.get("search_interval", SEARCH_INTERVAL),
+            "search_url": config.get("search_url", SEARCH_URL),
+        }
     return {
         "search_item": SEARCH_ITEM,
         "search_location": SEARCH_LOCATION,
         "max_price": SEARCH_PRICE_MAX,
         "category_id": CATEGORY_ID,
         "search_interval": SEARCH_INTERVAL,
+        "search_url": SEARCH_URL,
     }
 
 
@@ -116,6 +126,7 @@ def handle_update(update):
             "/price <preis> - Maximalprice setzen (0 = kostenlos)\n"
             "/category <id> - Kategorien-ID setzen (115 = Fahrräder)\n"
             "/interval <sekunden> - Suchinterval setzen\n"
+            "/url <URL> - Vollständige Such-URL setzen\n"
             "/status - Aktuelle Einstellungen anzeigen\n"
             "/help - Diese Hilfe anzeigen"
         )
@@ -162,6 +173,16 @@ def handle_update(update):
         except ValueError:
             send_message("❌ Bitte geben Sie eine gültige Kategorien-ID an: /category <id>")
     
+    elif text.startswith("/url "):
+        url = text.replace("/url ", "").strip()
+        if url:
+            config = load_config()
+            config["search_url"] = url
+            save_config(config)
+            send_message(f"✅ Such-URL geändert zu: *{url}*")
+        else:
+            send_message("❌ Bitte geben Sie eine vollständige Such-URL an: /url <URL>")
+    
     elif text.startswith("/interval "):
         try:
             interval = int(text.replace("/interval ", "").strip())
@@ -187,6 +208,8 @@ def handle_update(update):
             f"🏷️ Kategorie: `{category_name}`\n"
             f"⏱️ Suchinterval: `{config['search_interval']} Sekunden`"
         )
+        if config.get("search_url"):
+            status += f"\n🔗 Such-URL: `{config['search_url']}`"
         send_message(status)
     
     elif text.startswith("/help"):
@@ -212,6 +235,7 @@ def check_listings(config):
             config["search_location"],
             config["max_price"],
             config.get("category_id", 115),
+            config.get("search_url"),
         )
         for item in new_items:
             send_listing(item)

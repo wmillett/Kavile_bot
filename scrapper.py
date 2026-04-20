@@ -19,7 +19,7 @@ def save_seen_items(items):
         json.dump(items, f)
 
 
-def get_listings(search_item, location, max_price=0, category_id=None):
+def get_listings(search_item, location, max_price=0, category_id=None, search_url=None):
     """
     Search Kleinanzeigen for items (defaults to free items if max_price=0).
     
@@ -28,6 +28,7 @@ def get_listings(search_item, location, max_price=0, category_id=None):
         location: Location to search in (e.g., "Berlin")
         max_price: Maximum price (0 = free items only)
         category_id: Optional Kleinanzeigen category ID (e.g., 115 for "Fahrräder")
+        search_url: Optional full Kleinanzeigen search URL override
     
     Returns:
         List of new items not previously seen
@@ -37,20 +38,38 @@ def get_listings(search_item, location, max_price=0, category_id=None):
         "Accept-Language": "de-DE,de;q=0.9",
     }
     
-    # Build URL for Kleinanzeigen search
-    # Format: https://www.kleinanzeigen.de/s-{item}/{location}/k{category_id}
-    search_item_formatted = search_item.lower().replace(" ", "-")
-    location_formatted = location.lower().replace(" ", "-")
-    
-    # Use category ID if provided, otherwise use k0 for all categories
-    cat_id = category_id if category_id else "0"
-    url = f"https://www.kleinanzeigen.de/s-{search_item_formatted}/{location_formatted}/k{cat_id}"
-    
-    # Add price filter for free items
-    if max_price == 0:
-        url += "?priceFrom=0&priceTo=0"
-    elif max_price > 0:
-        url += f"?priceFrom=0&priceTo={max_price}"
+    def slugify(text):
+        replacements = {
+            "ä": "ae",
+            "ö": "oe",
+            "ü": "ue",
+            "Ä": "ae",
+            "Ö": "oe",
+            "Ü": "ue",
+            "ß": "ss",
+        }
+        text = text.strip()
+        for src, dst in replacements.items():
+            text = text.replace(src, dst)
+        return "-".join(text.lower().split())
+
+    # Use a full custom search URL if provided; otherwise build the standard Kleinanzeigen query.
+    if search_url:
+        url = search_url
+    else:
+        search_item_formatted = slugify(search_item)
+        location_formatted = slugify(location)
+
+        cat_id = category_id if category_id else "0"
+        url = f"https://www.kleinanzeigen.de/s-{search_item_formatted}/{location_formatted}/anzeige:angebote"
+
+        if max_price == 0:
+            url += "/preis:0:0"
+        elif max_price > 0:
+            url += f"/preis:0:{max_price}"
+
+        if cat_id != "0":
+            url += f"/c{cat_id}"
     
     try:
         r = requests.get(url, headers=headers, timeout=10)
@@ -62,35 +81,37 @@ def get_listings(search_item, location, max_price=0, category_id=None):
     soup = BeautifulSoup(r.text, "html.parser")
     items = []
     
-    # Kleinanzeigen uses '.adlistitem' as the main listing class
-    for ad in soup.select("#srchrslt article, .adlistitem"):
+    # Kleinanzeigen uses article.aditem elements for search results.
+    for ad in soup.select("#srchrslt article.aditem, article.aditem"):
         try:
-            # Extract title
-            title_elem = ad.select_one(".ellipsis")
+            # Extract title and link from the ad header
+            title_elem = ad.select_one("h2 a.ellipsis") or ad.select_one("a.ellipsis")
             if not title_elem:
                 continue
             title = title_elem.text.strip()
-            
+
             # Extract link
-            link_elem = ad.select_one("a[href*='/s-']")
+            link_elem = title_elem if title_elem.name == "a" else ad.select_one("a[href*='/s-anzeige/']")
             if not link_elem or not link_elem.get("href"):
                 continue
-            
+
             href = link_elem.get("href", "")
             if href.startswith("/"):
                 link = "https://www.kleinanzeigen.de" + href
             else:
                 link = href
-            
+
             # Extract item ID for duplicate detection
-            item_id = link.split("/")[-1]
-            
+            item_id = ad.get("data-adid") or link.rstrip("/").split("/")[-1].split("-")[0]
+            if not item_id:
+                continue
+
             # Extract price if available
-            price_elem = ad.select_one(".aditem-price")
+            price_elem = ad.select_one(".aditem-main--middle--price-shipping--price")
             price = price_elem.text.strip() if price_elem else "Kostenlos"
-            
+
             # Extract location if available
-            location_elem = ad.select_one(".aditem-text--location")
+            location_elem = ad.select_one(".aditem-main--top--left")
             item_location = location_elem.text.strip() if location_elem else "N/A"
             
             items.append({
