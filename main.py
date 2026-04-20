@@ -5,49 +5,12 @@ import json
 from dotenv import load_dotenv
 from scrapper import get_listings
 
-# Load environment variables
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-SEARCH_ITEM = os.getenv("SEARCH_ITEM", "Fahrrad")
-SEARCH_LOCATION = os.getenv("SEARCH_LOCATION", "Berlin")
-SEARCH_PRICE_MAX = int(os.getenv("SEARCH_PRICE_MAX", "0"))
-CATEGORY_ID = int(os.getenv("CATEGORY_ID", "115"))  # 115 = Fahrräder
+SEARCH_URL = os.getenv("SEARCH_URL")
 SEARCH_INTERVAL = int(os.getenv("SEARCH_INTERVAL", "300"))
-SEARCH_URL = os.getenv("SEARCH_URL", "")
-
-# Config file to store user settings
-CONFIG_FILE = "bot_config.json"
-
-
-def load_config():
-    """Load bot configuration from file."""
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            config = json.load(f)
-        return {
-            "search_item": config.get("search_item", SEARCH_ITEM),
-            "search_location": config.get("search_location", SEARCH_LOCATION),
-            "max_price": config.get("max_price", SEARCH_PRICE_MAX),
-            "category_id": config.get("category_id", CATEGORY_ID),
-            "search_interval": config.get("search_interval", SEARCH_INTERVAL),
-            "search_url": config.get("search_url", SEARCH_URL),
-        }
-    return {
-        "search_item": SEARCH_ITEM,
-        "search_location": SEARCH_LOCATION,
-        "max_price": SEARCH_PRICE_MAX,
-        "category_id": CATEGORY_ID,
-        "search_interval": SEARCH_INTERVAL,
-        "search_url": SEARCH_URL,
-    }
-
-
-def save_config(config):
-    """Save bot configuration to file."""
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
 
 
 def send_message(text):
@@ -227,59 +190,56 @@ def handle_update(update):
         )
 
 
-def check_listings(config):
-    """Check for new listings and send notifications."""
+def check_listings():
     try:
-        new_items = get_listings(
-            config["search_item"],
-            config["search_location"],
-            config["max_price"],
-            config.get("category_id", 115),
-            config.get("search_url"),
-        )
+        new_items = get_listings(SEARCH_URL)
+
         for item in new_items:
             send_listing(item)
-            print(f"✅ Sent notification: {item['title']}")
+            print(f"✅ Sent: {item['title']}")
+
     except Exception as e:
         print(f"Error checking listings: {e}")
 
 
 def main():
-    """Main bot loop."""
-    print("🤖 Kleinanzeigen Bot gestartet...")
-    send_message("🤖 Kleinanzeigen Bot ist nun aktiv!")
-    
-    offset = 0
+    print("🤖 Bot gestartet...")
+    send_message("🤖 Bot ist aktiv!")
+
     last_search = 0
-    
+    offset = 0
+
     while True:
-        # Handle incoming commands
+        # Telegram updates (optional, can also remove entirely)
         try:
-            result = get_updates(offset)
-            if result.get("ok"):
-                for update in result.get("result", []):
-                    handle_update(update)
-                    offset = update["update_id"] + 1
+            result = requests.get(
+                f"https://api.telegram.org/bot{TOKEN}/getUpdates",
+                params={"offset": offset},
+                timeout=10
+            ).json()
+
+            for update in result.get("result", []):
+                offset = update["update_id"] + 1
+
         except Exception as e:
-            print(f"Error handling updates: {e}")
-        
-        # Check for new listings periodically
-        config = load_config()
-        current_time = time.time()
-        if current_time - last_search >= config["search_interval"]:
-            check_listings(config)
-            last_search = current_time
-        
+            print(f"Update error: {e}")
+
+        # scraping interval
+        now = time.time()
+        if now - last_search >= SEARCH_INTERVAL:
+            check_listings()
+            last_search = now
+
         time.sleep(1)
 
 
 if __name__ == "__main__":
-    if not TOKEN or not CHAT_ID:
-        print("❌ Error: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env file")
+    if not TOKEN or not CHAT_ID or not SEARCH_URL:
+        print("❌ Missing TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID or SEARCH_URL")
         exit(1)
-    
+
     try:
         main()
     except KeyboardInterrupt:
-        print("\n🛑 Bot stopped")
-        send_message("🛑 Bot wurde gestoppt")
+        print("🛑 Stopped")
+        send_message("🛑 Bot stopped")

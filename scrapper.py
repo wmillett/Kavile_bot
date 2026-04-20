@@ -4,6 +4,24 @@ import json
 import os
 from datetime import datetime
 
+import re
+
+def extract_distance_km(text):
+    """
+    Extract distance in km from a string like:
+    'Berlin - 7 km'
+    Returns int or None if not found.
+    """
+    if not text:
+        return None
+
+    match = re.search(r"(\d+)\s*km", text.lower())
+    if match:
+        return int(match.group(1))
+
+    return None
+
+
 
 def load_seen_items():
     """Load previously seen item IDs to avoid duplicates."""
@@ -19,16 +37,12 @@ def save_seen_items(items):
         json.dump(items, f)
 
 
-def get_listings(search_item, location, max_price=0, category_id=None, search_url=None):
+def get_listings(search_url):
     """
     Search Kleinanzeigen for items (defaults to free items if max_price=0).
     
     Args:
-        search_item: Item to search for (e.g., "Fahrrad", "Bike")
-        location: Location to search in (e.g., "Berlin")
-        max_price: Maximum price (0 = free items only)
-        category_id: Optional Kleinanzeigen category ID (e.g., 115 for "Fahrräder")
-        search_url: Optional full Kleinanzeigen search URL override
+        search_url: full Kleinanzeigen search URL override
     
     Returns:
         List of new items not previously seen
@@ -53,23 +67,24 @@ def get_listings(search_item, location, max_price=0, category_id=None, search_ur
             text = text.replace(src, dst)
         return "-".join(text.lower().split())
 
+    
     # Use a full custom search URL if provided; otherwise build the standard Kleinanzeigen query.
     if search_url:
         url = search_url
-    else:
-        search_item_formatted = slugify(search_item)
-        location_formatted = slugify(location)
+    # else:
+    #     search_item_formatted = slugify(search_item)
+    #     location_formatted = slugify(location)
 
-        cat_id = category_id if category_id else "0"
-        url = f"https://www.kleinanzeigen.de/s-{search_item_formatted}/{location_formatted}/anzeige:angebote"
+    #     cat_id = category_id if category_id else "0"
+    #     url = f"https://www.kleinanzeigen.de/s-{search_item_formatted}/{location_formatted}/anzeige:angebote"
 
-        if max_price == 0:
-            url += "/preis:0:0"
-        elif max_price > 0:
-            url += f"/preis:0:{max_price}"
+    #     if max_price == 0:
+    #         url += "/preis:0:0"
+    #     elif max_price > 0:
+    #         url += f"/preis:0:{max_price}"
 
-        if cat_id != "0":
-            url += f"/c{cat_id}"
+    #     if cat_id != "0":
+    #         url += f"/c{cat_id}"
     
     try:
         r = requests.get(url, headers=headers, timeout=10)
@@ -122,6 +137,12 @@ def get_listings(search_item, location, max_price=0, category_id=None, search_ur
                 "link": link,
                 "timestamp": datetime.now().isoformat()
             })
+            distance_km = extract_distance_km(item_location)
+
+            # 🚫 Skip if distance is known and too far
+            if distance_km is not None and distance_km > 10:
+                continue
+            
         except Exception as e:
             print(f"Error parsing ad: {e}")
             continue
